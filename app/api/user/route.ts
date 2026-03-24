@@ -18,7 +18,7 @@ export async function GET(req: Request) {
 
         // Get Access Token
         const tokenData = await getToken(locationId);
-        if (!tokenData?.accessToken) {
+        if (!tokenData || !('accessToken' in tokenData) || !tokenData.accessToken) {
             return NextResponse.json(
                 { error: "No access token found for this location" },
                 { status: 401 }

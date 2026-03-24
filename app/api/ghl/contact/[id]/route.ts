@@ -23,7 +23,7 @@ export async function GET(
 
         const token = await getToken(locationId);
 
-        if (!token || !token.accessToken) {
+        if (!token || !('accessToken' in token) || !token.accessToken) {
             return NextResponse.json(
                 { error: "Unauthorized / No Token found", success: false },
                 { status: 401 }
@@ -72,7 +72,7 @@ export async function PUT(
         }
 
         const token = await getToken(locationId);
-        if (!token?.accessToken) {
+        if (!token || !('accessToken' in token) || !token.accessToken) {
             return NextResponse.json({ error: "Unauthorized", success: false }, { status: 401 });
         }
 

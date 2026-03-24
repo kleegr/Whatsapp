@@ -1,0 +1,6 @@
+
+> kleegr-whatsapp@0.1.0 build
+> prisma generate && node node_modules/next/dist/bin/next build --turbopack
+
+'prisma' is not recognized as an internal or external command,
+operable program or batch file.

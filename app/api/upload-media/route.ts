@@ -49,7 +49,7 @@ export async function POST(req: Request) {
     // Get GHL token
     const tokenRecord = await getToken(locationId, APP_ID);
 
-    if (!tokenRecord?.accessToken) {
+    if (!tokenRecord || !('accessToken' in tokenRecord) || !tokenRecord.accessToken) {
       return NextResponse.json(
         { error: "Failed to get GHL access token" },
         { status: 401, headers: corsHeaders }

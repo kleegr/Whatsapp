@@ -21,7 +21,7 @@ export async function GET(req: Request) {
     try {
         const tokenRecord = await getToken(locationId, APP_ID);
 
-        if (!tokenRecord || !("accessToken" in tokenRecord)) {
+        if (!tokenRecord || !("accessToken" in tokenRecord) || !tokenRecord.accessToken) {
             return NextResponse.json(
                 { error: "Token not found or invalid for this location" },
                 { status: 404 }
@@ -29,9 +29,9 @@ export async function GET(req: Request) {
         }
 
         const ghl: GHLAuth = {
-            access_token: tokenRecord?.accessToken,
+            access_token: tokenRecord.accessToken,
             locationId: locationId,
-            userId: tokenRecord?.userId,
+            userId: 'userId' in tokenRecord ? tokenRecord.userId : null,
         };
         console.log("ghl", ghl)
         console.log("contactId", contactId)

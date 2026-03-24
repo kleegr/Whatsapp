@@ -151,7 +151,7 @@ export async function POST(request: Request) {
                 }
 
                 const tokenData = await getToken(locationId, APP_ID);
-                if (tokenData?.accessToken) {
+                if (tokenData && 'accessToken' in tokenData && tokenData.accessToken) {
                     const ghlAuth = { access_token: tokenData.accessToken, locationId };
                     const isGroup = String(chatId).includes('@g.us');
                     const rawPhone = String(chatId).replace(/@c\.us$/, '').replace(/@g\.us$/, '');

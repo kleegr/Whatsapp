@@ -35,7 +35,7 @@ export async function GET(req: Request) {
 
         const tokenData = await getToken(locationId, appId);
 
-        if (!tokenData || !tokenData.accessToken) {
+        if (!tokenData || !('accessToken' in tokenData) || !tokenData.accessToken) {
             console.error("No token found for location:", locationId);
             return NextResponse.json({ error: 'Integration not found or token invalid' }, { status: 401, headers: corsHeaders() });
         }

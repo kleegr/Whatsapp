@@ -42,7 +42,7 @@ export async function POST(req: Request) {
             where: { locationId_appId: { locationId, appId: APP_ID } }
         });
 
-        if (tokenData && tokenData.accessToken) {
+        if (tokenData && 'accessToken' in tokenData && tokenData.accessToken) {
             try {
                 const subRes = await getSubaccountUser(tokenData.accessToken, userId);
                 if (subRes.success && subRes.data && typeof subRes.data !== 'string') {
