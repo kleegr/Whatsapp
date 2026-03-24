@@ -38,7 +38,7 @@ const WhatsAppManager = () => {
 
 
     const ssoConfig = {
-        app_id: process.env.NEXT_PUBLIC_SSO_APP_ID || "",
+        app_id: process.env.NEXT_PUBLIC_APP_ID || "",
         key: process.env.NEXT_PUBLIC_SSO_KEY || "",
     };
 
