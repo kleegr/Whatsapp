@@ -1,3 +1,4 @@
+import './env';
 import { Queue } from 'bullmq';
 import IORedis from 'ioredis';
 

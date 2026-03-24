@@ -1,3 +1,4 @@
+import './env';
 import { Worker, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { prisma } from './prisma';
