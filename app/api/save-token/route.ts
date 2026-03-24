@@ -21,6 +21,8 @@ export async function POST(req: Request) {
             userId
         } = data;
 
+        console.log("data", data)
+
         const isAgency = companyId && appId && access_token && userType === "Company";
 
         if (isAgency) {

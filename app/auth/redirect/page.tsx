@@ -9,6 +9,8 @@ const Index = () => {
     const hasRun = useRef(false);
     const app_id = process.env.NEXT_PUBLIC_APP_ID!;
 
+    console.log("app_id", app_id)
+
     const SaveAppToken = async () => {
         try {
             const searchParams = new URLSearchParams(window.location.search);
