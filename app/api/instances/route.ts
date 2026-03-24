@@ -59,7 +59,7 @@ export async function POST(req: Request) {
         }
 
         const randomStr = Math.random().toString(36).substring(7);
-        const webhookUrl = `https://whatsapp-rk9i.onrender.com/api/greenapi-webhook?locationId=${locationId}&userId=${userId}&r=${randomStr}`;
+        const webhookUrl = `https://whatsapp.kleegr.com/api/greenapi-webhook?locationId=${locationId}&userId=${userId}&r=${randomStr}`;
 
         const payload = {
             name: `${instanceName} connection`,
