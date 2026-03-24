@@ -6,13 +6,13 @@ export const connection = new IORedis(process.env.REDIS_URL || 'redis://localhos
 });
 
 export const webhookQueue = new Queue('webhook-processing', {
-    connection,
+    connection: connection as any,
 });
 
 export const syncQueue = new Queue('sync-processing', {
-    connection,
+    connection: connection as any,
 });
 
 export const outboundQueue = new Queue('outbound-processing', {
-    connection,
+    connection: connection as any,
 });

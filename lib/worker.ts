@@ -748,7 +748,7 @@ const worker = new Worker('webhook-processing', async (job: Job) => {
 
     return { success: true };
 
-}, { connection, concurrency: PROCESS_CONCURRENCY });
+}, { connection: connection as any, concurrency: PROCESS_CONCURRENCY });
 
 worker.on('completed', job => {
     console.log(`${job.id} has completed!`);
@@ -1027,7 +1027,7 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
         console.log(`Contact sync finished for instance ${idInstance}`);
     }
 
-}, { connection, concurrency: 2 });
+}, { connection: connection as any, concurrency: 2 });
 
 syncWorker.on('completed', job => {
     console.log(`Sync job ${job.id} completed`);
@@ -1203,7 +1203,7 @@ const outboundWorker = new Worker('outbound-processing', async (job: Job) => {
 
     return response.data;
 
-}, { connection, concurrency: 5 });
+}, { connection: connection as any, concurrency: 5 });
 
 outboundWorker.on('completed', job => {
     console.log(`Outbound job ${job.id} completed`);
