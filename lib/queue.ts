@@ -9,6 +9,7 @@ export const webhookQueue = new Queue('webhook-processing', {
     connection: connection as any,
 });
 
+
 export const syncQueue = new Queue('sync-processing', {
     connection: connection as any,
 });
