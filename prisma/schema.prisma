@@ -1,0 +1,80 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Token {
+  id           Int       @id @default(autoincrement())
+  appId        String
+  accessToken  String?
+  refreshToken String?
+  userType     String?
+  companyId    String?
+  locationId   String
+  userId       String?
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([locationId, appId])
+}
+
+model WhatsappInstance {
+  id         Int     @id @default(autoincrement())
+  companyId  String?
+  locationId String
+  userId     String
+
+  idInstance       String  @unique
+  apiTokenInstance String
+  apiUrl           String
+  mediaUrl         String
+  typeInstance     String  @default("whatsapp")
+  name             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+}
+
+model WhatsappMessageMap {
+  id                  Int       @id @default(autoincrement())
+  wpMsgId             String    @map("wp_msg_id")
+  ghlMsgId            String    @map("ghl_msg_id")
+  locationId          String    @map("location_id")
+  fromChatId          String    @map("from_chat_id")
+  toChatId            String    @map("to_chat_id")
+  stanzaId            String?   @map("stanza_id")
+  isForwarded         Boolean?  @map("is_forwarded")
+  isOutboundForward   Boolean?  @map("is_outbound_forward")
+  forwardedToName     String?   @map("forwarded_to_name")
+  replyToGhlMsgId    String?   @map("reply_to_ghl_msg_id")
+  quotedTextPreview   String?   @map("quoted_text_preview")
+  readAt              DateTime? @map("read_at")
+  attachments         Json?     @map("attachments")
+  createdAt          DateTime  @default(now())
+
+  @@map(name: "whatsapp_message_maps")
+}
+
+model Trigger {
+  id          Int      @id @default(autoincrement())
+  ghlId       String   @unique
+  locationId  String
+  key         String
+  filters     Json?
+  targetUrl   String
+  eventType   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([key])
+  @@map(name: "triggers")
+}
