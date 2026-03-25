@@ -139,6 +139,8 @@ if ("TURBOPACK compile-time truthy", 1) /*TURBOPACK member replacement*/ __turbo
 "use strict";
 
 __turbopack_context__.s([
+    "OPTIONS",
+    ()=>OPTIONS,
     "POST",
     ()=>POST
 ]);
@@ -148,6 +150,17 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app
 ;
 ;
 ;
+const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept"
+};
+async function OPTIONS() {
+    return new __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"](null, {
+        status: 204,
+        headers: corsHeaders
+    });
+}
 async function POST(req) {
     try {
         const body = await req.json().catch(()=>({}));
@@ -159,7 +172,8 @@ async function POST(req) {
                 success: false,
                 error: "locationId is required"
             }, {
-                status: 400
+                status: 400,
+                headers: corsHeaders
             });
         }
         if (!chatId || typeof chatId !== "string" || !chatId.trim()) {
@@ -167,7 +181,8 @@ async function POST(req) {
                 success: false,
                 error: "chatId is required"
             }, {
-                status: 400
+                status: 400,
+                headers: corsHeaders
             });
         }
         // Prefer user-specific instance; fallback to location instance (matches outbound worker behavior)
@@ -192,7 +207,8 @@ async function POST(req) {
                 success: false,
                 error: "WhatsApp instance not found for locationId"
             }, {
-                status: 404
+                status: 404,
+                headers: corsHeaders
             });
         }
         const { apiUrl, idInstance, apiTokenInstance } = instance;
@@ -215,17 +231,22 @@ async function POST(req) {
             instance: {
                 idInstance
             }
+        }, {
+            headers: corsHeaders
         });
     } catch (error) {
         console.error("Error archiving chat:", error?.message || error);
+        const axiosStatus = error?.response?.status;
+        const status = typeof axiosStatus === "number" && axiosStatus >= 400 && axiosStatus < 600 ? axiosStatus : 500;
         return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
             success: false,
             error: "Failed to archive chat",
             details: error?.message,
             data: error?.response?.data,
-            status: error?.response?.status
+            status: axiosStatus
         }, {
-            status: 500
+            status,
+            headers: corsHeaders
         });
     }
 }

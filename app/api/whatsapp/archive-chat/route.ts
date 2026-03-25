@@ -1,7 +1,16 @@
-
 import { NextResponse } from "next/server";
 import axios from "axios";
 import { prisma } from "../../../../lib/prisma";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
+}
 
 export async function POST(req: Request) {
   try {
@@ -14,14 +23,14 @@ export async function POST(req: Request) {
     if (!locationId) {
       return NextResponse.json(
         { success: false, error: "locationId is required" },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
     if (!chatId || typeof chatId !== "string" || !chatId.trim()) {
       return NextResponse.json(
         { success: false, error: "chatId is required" },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -41,7 +50,7 @@ export async function POST(req: Request) {
     if (!instance) {
       return NextResponse.json(
         { success: false, error: "WhatsApp instance not found for locationId" },
-        { status: 404 }
+        { status: 404, headers: corsHeaders }
       );
     }
 
@@ -59,23 +68,31 @@ export async function POST(req: Request) {
     );
 
     // archiveChat returns empty body on success (200)
-    return NextResponse.json({
-      success: true,
-      status: resp.status,
-      data: resp.data ?? null,
-      instance: { idInstance },
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        status: resp.status,
+        data: resp.data ?? null,
+        instance: { idInstance },
+      },
+      { headers: corsHeaders }
+    );
   } catch (error: any) {
     console.error("Error archiving chat:", error?.message || error);
+    const axiosStatus = error?.response?.status;
+    const status =
+      typeof axiosStatus === "number" && axiosStatus >= 400 && axiosStatus < 600
+        ? axiosStatus
+        : 500;
     return NextResponse.json(
       {
         success: false,
         error: "Failed to archive chat",
         details: error?.message,
         data: error?.response?.data,
-        status: error?.response?.status,
+        status: axiosStatus,
       },
-      { status: 500 }
+      { status, headers: corsHeaders }
     );
   }
 }
