@@ -15,6 +15,9 @@ interface GHLAuth {
   company_id?: string;
 }
 
+
+
+
 interface RefreshKeys {
   client_id: string;
   client_secret: string;
