@@ -19,7 +19,7 @@ export async function POST(req: Request) {
     const locationId = body?.locationId as string | undefined;
     const userId = body?.userId as string | undefined;
     const chatId = body?.chatId as string | undefined;
-
+    console.log("Archive chat request received:", { locationId, userId, chatId });
     if (!locationId) {
       return NextResponse.json(
         { success: false, error: "locationId is required" },
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     let instance =
       (userId
         ? await prisma.whatsappInstance.findFirst({
-            where: { locationId, userId },
+            where: { locationId },
             orderBy: { createdAt: "desc" },
           })
         : null) ||
@@ -46,7 +46,8 @@ export async function POST(req: Request) {
         where: { locationId },
         orderBy: { createdAt: "desc" },
       }));
-
+      console.log("instance found for archiving chat:", instance);
+      
     if (!instance) {
       return NextResponse.json(
         { success: false, error: "WhatsApp instance not found for locationId" },
@@ -60,13 +61,14 @@ export async function POST(req: Request) {
     // Green-API docs: POST {{apiUrl}}/waInstance{{idInstance}}/archiveChat/{{apiTokenInstance}}
     // Body: { chatId }
     const url = `${baseUrl}waInstance${idInstance}/archiveChat/${apiTokenInstance}`;
-
+    console.log("archiveChat url:", url);
     const resp = await axios.post(
       url,
       { chatId: chatId.trim() },
       { headers: { "Content-Type": "application/json" } }
     );
-
+    console.log("archiveChat response:", resp);
+    return 0;
     // archiveChat returns empty body on success (200)
     return NextResponse.json(
       {

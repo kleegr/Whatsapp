@@ -138,6 +138,7 @@ function ArchiveMessageButton() {
 
   async function handleCustomArchiveClick(btn) {
     const locationId = getLocationIdFromUrl();
+    console.log("locationId", locationId);
     if (!locationId) {
       showArchiveToast("Could not read location from URL.", true);
       return;
@@ -151,7 +152,7 @@ function ArchiveMessageButton() {
       );
       return;
     }
-
+    console.log("contactId", contactId);
     const prevPointer = btn.style.pointerEvents;
     btn.style.pointerEvents = "none";
     btn.style.opacity = "0.6";
@@ -160,13 +161,15 @@ function ArchiveMessageButton() {
       const userId = await getCurrentUserId();
       const contactUrl = `https://backend.leadconnectorhq.com/contacts/${encodeURIComponent(contactId)}`;
       const contactJson = await getDataFromLocalStorage(contactUrl);
+      console.log("contactJson", contactJson);
       if (!contactJson) {
         showArchiveToast("Could not load contact details.", true);
         return;
       }
       const phone = getPhoneFromContactPayload(contactJson);
+      console.log("phone", phone);
       const chatId = phoneToChatId(phone);
-
+      console.log("chatId", chatId);
       if (!chatId) {
         showArchiveToast(
           "No phone number on this contact — cannot build WhatsApp chat id.",

@@ -41,84 +41,6 @@ const mod = __turbopack_context__.x("next/dist/server/app-render/after-task-asyn
 
 module.exports = mod;
 }),
-"[externals]/util [external] (util, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("util", () => require("util"));
-
-module.exports = mod;
-}),
-"[externals]/stream [external] (stream, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("stream", () => require("stream"));
-
-module.exports = mod;
-}),
-"[externals]/path [external] (path, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("path", () => require("path"));
-
-module.exports = mod;
-}),
-"[externals]/http [external] (http, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("http", () => require("http"));
-
-module.exports = mod;
-}),
-"[externals]/https [external] (https, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("https", () => require("https"));
-
-module.exports = mod;
-}),
-"[externals]/url [external] (url, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("url", () => require("url"));
-
-module.exports = mod;
-}),
-"[externals]/fs [external] (fs, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("fs", () => require("fs"));
-
-module.exports = mod;
-}),
-"[externals]/crypto [external] (crypto, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("crypto", () => require("crypto"));
-
-module.exports = mod;
-}),
-"[externals]/http2 [external] (http2, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("http2", () => require("http2"));
-
-module.exports = mod;
-}),
-"[externals]/assert [external] (assert, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("assert", () => require("assert"));
-
-module.exports = mod;
-}),
-"[externals]/tty [external] (tty, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("tty", () => require("tty"));
-
-module.exports = mod;
-}),
-"[externals]/zlib [external] (zlib, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("zlib", () => require("zlib"));
-
-module.exports = mod;
-}),
-"[externals]/events [external] (events, cjs)", ((__turbopack_context__, module, exports) => {
-
-const mod = __turbopack_context__.x("events", () => require("events"));
-
-module.exports = mod;
-}),
 "[project]/lib/prisma.ts [app-route] (ecmascript)", ((__turbopack_context__) => {
 "use strict";
 
@@ -145,7 +67,6 @@ __turbopack_context__.s([
     ()=>POST
 ]);
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/server.js [app-route] (ecmascript)");
-var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$axios$2f$lib$2f$axios$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/axios/lib/axios.js [app-route] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$lib$2f$prisma$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/lib/prisma.ts [app-route] (ecmascript)");
 ;
 ;
@@ -207,32 +128,15 @@ async function POST(req) {
             }
         });
         console.log("instance found for archiving chat:", instance);
-        if (!instance) {
-            return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["NextResponse"].json({
-                success: false,
-                error: "WhatsApp instance not found for locationId"
-            }, {
-                status: 404,
-                headers: corsHeaders
-            });
-        }
-        const { apiUrl, idInstance, apiTokenInstance } = instance;
-        const baseUrl = apiUrl.endsWith("/") ? apiUrl : `${apiUrl}/`;
-        // Green-API docs: POST {{apiUrl}}/waInstance{{idInstance}}/archiveChat/{{apiTokenInstance}}
-        // Body: { chatId }
-        const url = `${baseUrl}waInstance${idInstance}/archiveChat/${apiTokenInstance}`;
-        console.log("archiveChat url:", url);
-        const resp = await __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$axios$2f$lib$2f$axios$2e$js__$5b$app$2d$route$5d$__$28$ecmascript$29$__["default"].post(url, {
-            chatId: chatId.trim()
-        }, {
-            headers: {
-                "Content-Type": "application/json"
-            }
-        });
-        console.log("archiveChat response:", resp);
         return 0;
         //TURBOPACK unreachable
         ;
+        const apiUrl = undefined, idInstance = undefined, apiTokenInstance = undefined;
+        const baseUrl = undefined;
+        // Green-API docs: POST {{apiUrl}}/waInstance{{idInstance}}/archiveChat/{{apiTokenInstance}}
+        // Body: { chatId }
+        const url = undefined;
+        const resp = undefined;
     } catch (error) {
         console.error("Error archiving chat:", error?.message || error);
         const axiosStatus = error?.response?.status;
@@ -252,4 +156,4 @@ async function POST(req) {
 }),
 ];
 
-//# sourceMappingURL=%5Broot-of-the-server%5D__09kdrvw._.js.map
+//# sourceMappingURL=%5Broot-of-the-server%5D__0l5ymd.._.js.map
