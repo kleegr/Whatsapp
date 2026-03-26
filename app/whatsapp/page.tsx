@@ -1,5 +1,5 @@
 "use client"
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
     QrCode,
     Trash2,
@@ -10,7 +10,8 @@ import {
     CheckCircle,
     Loader2,
     X,
-    LogOut
+    LogOut,
+    Download
 } from 'lucide-react';
 import SsoHandler from '../../lib/ssoHandler';
 import { toast } from 'react-toastify';
@@ -24,6 +25,17 @@ interface WhatsappInstance {
     createdAt: string;
     status?: string;
     name?: string;
+}
+
+interface SyncProgress {
+    status: 'idle' | 'syncing' | 'done' | 'error';
+    phase: string;
+    totalContacts: number;
+    processedContacts: number;
+    totalHistoryJobs: number;
+    completedHistoryJobs: number;
+    startedAt: number | null;
+    error: string;
 }
 
 const WhatsAppManager = () => {
@@ -185,6 +197,99 @@ const WhatsAppManager = () => {
         }
     };
 
+    // --- Sync Contacts State ---
+    const [syncProgress, setSyncProgress] = useState<Record<string, SyncProgress>>({});
+    const syncPollingRef = useRef<Record<string, NodeJS.Timeout>>({});
+
+    const startSyncPolling = useCallback((idInstance: string) => {
+        // Clear any existing polling for this instance
+        if (syncPollingRef.current[idInstance]) {
+            clearInterval(syncPollingRef.current[idInstance]);
+        }
+
+        const poll = async () => {
+            try {
+                const res = await axios.get(`/api/instances/sync-contacts/status?idInstance=${idInstance}`);
+                if (res.data.success && res.data.data) {
+                    const progress = res.data.data as SyncProgress;
+                    setSyncProgress(prev => ({ ...prev, [idInstance]: progress }));
+
+                    if (progress.status === 'done') {
+                        toast.success("Sync completed successfully!");
+                        if (syncPollingRef.current[idInstance]) {
+                            clearInterval(syncPollingRef.current[idInstance]);
+                            delete syncPollingRef.current[idInstance];
+                        }
+                    } else if (progress.status === 'error') {
+                        toast.error(`Sync failed: ${progress.error}`);
+                        if (syncPollingRef.current[idInstance]) {
+                            clearInterval(syncPollingRef.current[idInstance]);
+                            delete syncPollingRef.current[idInstance];
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Error polling sync status:", err);
+            }
+        };
+
+        poll(); // Immediate first poll
+        syncPollingRef.current[idInstance] = setInterval(poll, 2000);
+    }, []);
+
+    // On mount, check if any instances have an active sync
+    useEffect(() => {
+        if (instances.length > 0) {
+            instances.forEach(inst => {
+                if (inst.status === 'authorized') {
+                    axios.get(`/api/instances/sync-contacts/status?idInstance=${inst.idInstance}`)
+                        .then(res => {
+                            if (res.data.success && res.data.data) {
+                                const progress = res.data.data as SyncProgress;
+                                if (progress.status === 'syncing') {
+                                    setSyncProgress(prev => ({ ...prev, [inst.idInstance]: progress }));
+                                    startSyncPolling(inst.idInstance);
+                                } else if (progress.status === 'done' || progress.status === 'error') {
+                                    setSyncProgress(prev => ({ ...prev, [inst.idInstance]: progress }));
+                                }
+                            }
+                        })
+                        .catch(() => { });
+                }
+            });
+        }
+
+        return () => {
+            Object.values(syncPollingRef.current).forEach(clearInterval);
+            syncPollingRef.current = {};
+        };
+    }, [instances.length]);
+
+    const handleSyncContacts = async (idInstance: string) => {
+        const currentProgress = syncProgress[idInstance];
+        if (currentProgress?.status === 'syncing') {
+            toast.info("Sync is already in progress");
+            return;
+        }
+
+        if (!confirm("This will sync all WhatsApp contacts and their chat history to GoHighLevel. This may take a while. Continue?")) {
+            return;
+        }
+
+        try {
+            const res = await axios.post('/api/instances/sync-contacts', { idInstance });
+            if (res.data.success) {
+                toast.success("Sync started! You can navigate away - it will continue in the background.");
+                startSyncPolling(idInstance);
+            } else {
+                toast.error(res.data.error || "Failed to start sync");
+            }
+        } catch (error: any) {
+            const errMsg = error.response?.data?.error || "Failed to start sync";
+            toast.error(errMsg);
+        }
+    };
+
     const [qrUrl, setQrUrl] = useState<string | null>(null);
 
     // Poll for QR code to prevent expiration
@@ -305,6 +410,67 @@ const WhatsAppManager = () => {
         return (Date.now() - new Date(createdAt).getTime()) > 90000;
     };
 
+    const SyncProgressBar = ({ progress }: { progress: SyncProgress }) => {
+        if (progress.status === 'done') {
+            return (
+                <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                    <div className="flex items-center gap-2 text-green-700 text-sm font-medium">
+                        <CheckCircle className="w-4 h-4" />
+                        <span>Sync complete! {progress.totalContacts} contacts synced.</span>
+                    </div>
+                </div>
+            );
+        }
+
+        if (progress.status === 'error') {
+            return (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                    <div className="flex items-center gap-2 text-red-700 text-sm font-medium">
+                        <AlertCircle className="w-4 h-4" />
+                        <span>Sync failed: {progress.error || 'Unknown error'}</span>
+                    </div>
+                </div>
+            );
+        }
+
+        if (progress.status !== 'syncing') return null;
+
+        const isContactPhase = progress.phase === 'contacts' || progress.phase === 'starting';
+        const isHistoryPhase = progress.phase === 'history';
+
+        let percent = 0;
+        let label = 'Starting sync...';
+
+        if (isContactPhase && progress.totalContacts > 0) {
+            percent = Math.round((progress.processedContacts / progress.totalContacts) * 100);
+            label = `Syncing contacts: ${progress.processedContacts}/${progress.totalContacts}`;
+        } else if (isHistoryPhase && progress.totalHistoryJobs > 0) {
+            percent = Math.round((progress.completedHistoryJobs / progress.totalHistoryJobs) * 100);
+            label = `Syncing chat history: ${progress.completedHistoryJobs}/${progress.totalHistoryJobs}`;
+        } else if (progress.phase === 'starting') {
+            label = 'Starting sync...';
+        }
+
+        return (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+                <div className="flex items-center justify-between text-xs text-blue-700 font-medium mb-2">
+                    <div className="flex items-center gap-2">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>{label}</span>
+                    </div>
+                    <span>{percent}%</span>
+                </div>
+                <div className="h-2 w-full bg-blue-100 rounded-full overflow-hidden">
+                    <div
+                        className="h-full bg-blue-500 transition-all duration-500 ease-out rounded-full"
+                        style={{ width: `${percent}%` }}
+                    />
+                </div>
+                <p className="text-[10px] text-blue-500 mt-1.5">You can navigate away - sync continues in the background</p>
+            </div>
+        );
+    };
+
 
 
 
@@ -408,17 +574,37 @@ const WhatsAppManager = () => {
                                     </div>
                                 </div>
 
-                                <div className="flex flex-wrap gap-3 mt-auto">
+                                <div className="flex flex-col gap-3 mt-auto">
+                                    {/* Sync Progress Bar */}
+                                    {instance.status === "authorized" && syncProgress[instance.idInstance] && syncProgress[instance.idInstance].status !== 'idle' && (
+                                        <SyncProgressBar progress={syncProgress[instance.idInstance]} />
+                                    )}
+
                                     {instance.status === "authorized" ? (
-                                        <>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => handleSyncContacts(instance.idInstance)}
+                                                disabled={syncProgress[instance.idInstance]?.status === 'syncing'}
+                                                className={`flex-1 h-[48px] flex items-center justify-center gap-2 rounded-xl font-semibold text-sm transition-colors whitespace-nowrap ${syncProgress[instance.idInstance]?.status === 'syncing'
+                                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                        : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                                    }`}
+                                            >
+                                                {syncProgress[instance.idInstance]?.status === 'syncing' ? (
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                ) : (
+                                                    <Download className="w-4 h-4" />
+                                                )}
+                                                {syncProgress[instance.idInstance]?.status === 'syncing' ? 'Syncing...' : 'Sync Contacts'}
+                                            </button>
                                             <button
                                                 onClick={() => handleLogoutInstance(instance.idInstance)}
-                                                className="w-full h-[48px] flex items-center justify-center gap-2 bg-indigo-50 text-indigo-600 rounded-xl font-semibold text-sm hover:bg-indigo-100 transition-colors whitespace-nowrap"
+                                                className="flex-1 h-[48px] flex items-center justify-center gap-2 bg-indigo-50 text-indigo-600 rounded-xl font-semibold text-sm hover:bg-indigo-100 transition-colors whitespace-nowrap"
                                             >
                                                 <LogOut className="w-4 h-4" />
                                                 Logout
                                             </button>
-                                        </>
+                                        </div>
                                     ) : (
                                         !isInstanceReady(instance.createdAt) ? (
                                             <ActivationTimer

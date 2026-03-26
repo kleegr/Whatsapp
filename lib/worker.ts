@@ -761,6 +761,27 @@ worker.on('failed', (job, err) => {
 
 console.log("Worker started, listening for jobs...");
 
+/* -------------------------------------------------------------------------- */
+/*                         SYNC PROGRESS HELPERS                              */
+/* -------------------------------------------------------------------------- */
+
+const SYNC_PROGRESS_TTL = 3600; // 1 hour TTL for progress keys
+
+async function setSyncProgress(idInstance: string, data: Record<string, string | number>) {
+    const key = `sync:progress:${idInstance}`;
+    const stringData: Record<string, string> = {};
+    for (const [k, v] of Object.entries(data)) {
+        stringData[k] = String(v);
+    }
+    await connection.hmset(key, stringData);
+    await connection.expire(key, SYNC_PROGRESS_TTL);
+}
+
+async function incrSyncField(idInstance: string, field: string, amount = 1) {
+    const key = `sync:progress:${idInstance}`;
+    await connection.hincrby(key, field, amount);
+}
+
 const syncWorker = new Worker('sync-processing', async (job: Job) => {
     if (job.name === 'sync-history') {
         const { idInstance, chatId, contactId, locationId, userId, conversationId } = job.data;
@@ -781,6 +802,7 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
 
         if (!history || !Array.isArray(history) || history.length === 0) {
             console.log(`No history found for ${chatId}`);
+            await incrSyncField(idInstance, 'completedHistoryJobs');
             return;
         }
 
@@ -871,6 +893,21 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
         }
 
         console.log(`Sync complete for ${chatId}`);
+        await incrSyncField(idInstance, 'completedHistoryJobs');
+
+        // Check if all history jobs are done
+        const progressKey = `sync:progress:${idInstance}`;
+        const [totalStr, completedStr] = await Promise.all([
+            connection.hget(progressKey, 'totalHistoryJobs'),
+            connection.hget(progressKey, 'completedHistoryJobs'),
+        ]);
+        const total = parseInt(totalStr || '0', 10);
+        const completed = parseInt(completedStr || '0', 10);
+        if (total > 0 && completed >= total) {
+            await setSyncProgress(idInstance, { status: 'done', phase: 'done' });
+            await connection.del(`sync:lock:${locationId}`);
+            console.log(`[SYNC] All history jobs done for instance ${idInstance}`);
+        }
 
     } else if (job.name === 'sync-contacts') {
         const { idInstance } = job.data;
@@ -914,10 +951,23 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
 
         const contacts = await getContacts(apiUrl, idInstance, apiTokenInstance);
         if (!Array.isArray(contacts)) {
+            await setSyncProgress(idInstance, { status: 'error', error: 'Failed to fetch contacts from GreenAPI' });
+            await connection.del(`sync:lock:${locationId}`);
             throw new Error("Failed to fetch contacts from GreenAPI");
         }
 
         console.log(`Fetched ${contacts.length} contacts for instance ${idInstance}. Upserting...`);
+
+        await setSyncProgress(idInstance, {
+            status: 'syncing',
+            phase: 'contacts',
+            totalContacts: contacts.length,
+            processedContacts: 0,
+            totalHistoryJobs: 0,
+            completedHistoryJobs: 0,
+            startedAt: Date.now(),
+            error: '',
+        });
 
         const ghlAuth = {
             locationId,
@@ -926,6 +976,7 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
         };
 
         const { syncQueue } = await import('./queue');
+        let historyJobCount = 0;
 
         for (const contact of contacts) {
             try {
@@ -1017,6 +1068,7 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
                                 removeOnComplete: true,
                                 removeOnFail: 1000
                             });
+                            historyJobCount++;
                         }
                     }
                 }
@@ -1024,8 +1076,24 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
             } catch (err) {
                 console.error(`Failed to process contact ${contact.id}:`, err);
             }
+
+            await incrSyncField(idInstance, 'processedContacts');
         }
-        console.log(`Contact sync finished for instance ${idInstance}`);
+
+        // Update phase to history syncing
+        if (historyJobCount > 0) {
+            await setSyncProgress(idInstance, {
+                phase: 'history',
+                totalHistoryJobs: historyJobCount,
+                completedHistoryJobs: 0,
+            });
+        } else {
+            // No history jobs to process, mark as done
+            await setSyncProgress(idInstance, { status: 'done', phase: 'done' });
+            await connection.del(`sync:lock:${locationId}`);
+        }
+
+        console.log(`Contact sync finished for instance ${idInstance}, enqueued ${historyJobCount} history jobs`);
     }
 
 }, { connection: connection as any, concurrency: 2 });
@@ -1033,8 +1101,22 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
 syncWorker.on('completed', job => {
     console.log(`Sync job ${job.id} completed`);
 });
-syncWorker.on('failed', (job, err) => {
+syncWorker.on('failed', async (job, err) => {
     console.log(`Sync job ${job?.id} failed: ${err.message}`);
+    if (job?.data?.idInstance) {
+        const idInstance = job.data.idInstance;
+        await setSyncProgress(idInstance, { status: 'error', error: err.message });
+        // Try to release the lock
+        if (job.data.locationId) {
+            await connection.del(`sync:lock:${job.data.locationId}`);
+        } else {
+            // Lookup locationId from instance
+            try {
+                const inst = await prisma.whatsappInstance.findUnique({ where: { idInstance } });
+                if (inst) await connection.del(`sync:lock:${inst.locationId}`);
+            } catch (_) { }
+        }
+    }
 });
 
 const outboundWorker = new Worker('outbound-processing', async (job: Job) => {
