@@ -68,7 +68,6 @@ export async function POST(req: Request) {
       { headers: { "Content-Type": "application/json" } }
     );
     console.log("archiveChat response:", resp);
-    return 0;
     // archiveChat returns empty body on success (200)
     return NextResponse.json(
       {
