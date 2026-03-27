@@ -11,7 +11,7 @@ export default function Home() {
         </p>
         <div className="flex justify-center">
           <a
-            href={`https://app.gohighlevel.com/integration/${appId}`}
+            href={`https://crm.kleegr.com/integration/${appId}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center px-6 py-3 text-lg font-medium rounded-full text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-300 dark:focus:ring-indigo-800 transition-colors"

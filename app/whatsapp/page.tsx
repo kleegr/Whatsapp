@@ -272,7 +272,7 @@ const WhatsAppManager = () => {
             return;
         }
 
-        if (!confirm("This will sync all WhatsApp contacts and their chat history to GoHighLevel. This may take a while. Continue?")) {
+        if (!confirm("This will sync all WhatsApp contacts and their chat history to Kleegr. This may take a while. Continue?")) {
             return;
         }
 
@@ -586,8 +586,8 @@ const WhatsAppManager = () => {
                                                 onClick={() => handleSyncContacts(instance.idInstance)}
                                                 disabled={syncProgress[instance.idInstance]?.status === 'syncing'}
                                                 className={`flex-1 h-[48px] flex items-center justify-center gap-2 rounded-xl font-semibold text-sm transition-colors whitespace-nowrap ${syncProgress[instance.idInstance]?.status === 'syncing'
-                                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                        : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                    : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
                                                     }`}
                                             >
                                                 {syncProgress[instance.idInstance]?.status === 'syncing' ? (

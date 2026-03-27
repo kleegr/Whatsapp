@@ -38,16 +38,16 @@ export async function POST(req: Request) {
     let instance =
       (userId
         ? await prisma.whatsappInstance.findFirst({
-            where: { locationId },
-            orderBy: { createdAt: "desc" },
-          })
+          where: { locationId },
+          orderBy: { createdAt: "desc" },
+        })
         : null) ||
       (await prisma.whatsappInstance.findFirst({
         where: { locationId },
         orderBy: { createdAt: "desc" },
       }));
-      console.log("instance found for archiving chat:", instance);
-      
+    console.log("instance found for archiving chat:", instance);
+
     if (!instance) {
       return NextResponse.json(
         { success: false, error: "WhatsApp instance not found for locationId" },
