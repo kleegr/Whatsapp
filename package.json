@@ -7,7 +7,8 @@
     "build": "prisma generate && node node_modules/next/dist/bin/next build --turbopack",
     "start": "node node_modules/next/dist/bin/next start",
     "lint": "eslint .",
-    "worker": "tsx lib/worker.ts"
+    "worker": "tsx lib/worker.ts",
+    "debug:sync-contacts": "tsx script/debug-sync-contacts.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",

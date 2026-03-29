@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
 import { getToken } from "../../../lib/token";
-import { webhookQueue, syncQueue } from "../../../lib/queue";
+import { webhookQueue } from "../../../lib/queue";
 import { prisma } from "../../../lib/prisma";
 
 export async function POST(req: Request) {
@@ -35,17 +35,6 @@ export async function POST(req: Request) {
         if (body.typeWebhook === "stateInstanceChanged") {
             const { stateInstance, idInstance } = body.instanceData;
             console.log(`Received stateInstanceChanged: ${stateInstance} for instance ${idInstance}`);
-
-            if (stateInstance === "authorized") {
-                await syncQueue.add("sync-contacts", {
-                    idInstance: idInstance
-                }, {
-                    removeOnComplete: true,
-                    removeOnFail: 1000
-                });
-                console.log(`Triggered contact sync for instance ${idInstance}`);
-            }
-
             return NextResponse.json({ success: true });
         }
 

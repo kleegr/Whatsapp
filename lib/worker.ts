@@ -16,11 +16,18 @@ import {
     getCustomFieldValue,
     ContactData
 } from './ghl';
-import { getGroupData, getChatHistory, getContacts } from './greenapi';
+import { getGroupData, getChatHistory, getContacts, SYNC_CHAT_HISTORY_COUNT } from './greenapi';
 import { getToken } from './token';
+import { setSyncProgress, incrSyncField } from './syncProgress';
 import axios from 'axios';
 
 const APP_ID = process.env.GHL_APP_ID!;
+
+if (!process.env.NEXT_PUBLIC_CONVERSATION_PROVIDER_ID) {
+    console.warn(
+        "[WORKER] NEXT_PUBLIC_CONVERSATION_PROVIDER_ID is unset — inbound/outbound conversation messages (including sync-history) may fail in GHL."
+    );
+}
 
 const connection = new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', {
     maxRetriesPerRequest: null,
@@ -761,27 +768,6 @@ worker.on('failed', (job, err) => {
 
 console.log("Worker started, listening for jobs...");
 
-/* -------------------------------------------------------------------------- */
-/*                         SYNC PROGRESS HELPERS                              */
-/* -------------------------------------------------------------------------- */
-
-const SYNC_PROGRESS_TTL = 3600; // 1 hour TTL for progress keys
-
-async function setSyncProgress(idInstance: string, data: Record<string, string | number>) {
-    const key = `sync:progress:${idInstance}`;
-    const stringData: Record<string, string> = {};
-    for (const [k, v] of Object.entries(data)) {
-        stringData[k] = String(v);
-    }
-    await connection.hmset(key, stringData);
-    await connection.expire(key, SYNC_PROGRESS_TTL);
-}
-
-async function incrSyncField(idInstance: string, field: string, amount = 1) {
-    const key = `sync:progress:${idInstance}`;
-    await connection.hincrby(key, field, amount);
-}
-
 const syncWorker = new Worker('sync-processing', async (job: Job) => {
     if (job.name === 'sync-history') {
         const { idInstance, chatId, contactId, locationId, userId, conversationId } = job.data;
@@ -798,7 +784,13 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
         const { apiTokenInstance, apiUrl } = instance;
 
         console.log(`Fetching history for ${chatId}...`);
-        const history = await getChatHistory(apiUrl, idInstance, apiTokenInstance, chatId, 500);
+        const history = await getChatHistory(
+            apiUrl,
+            idInstance,
+            apiTokenInstance,
+            chatId,
+            SYNC_CHAT_HISTORY_COUNT
+        );
 
         if (!history || !Array.isArray(history) || history.length === 0) {
             console.log(`No history found for ${chatId}`);
@@ -820,6 +812,9 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
         };
 
         const sortedHistory = history.reverse();
+
+        let historySynced = 0;
+        let historyFailed = 0;
 
         for (const msg of sortedHistory) {
             if (msg.isDeleted || msg.typeMessage === 'systemMessage') continue;
@@ -862,6 +857,23 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
 
             if (!messageContent && attachments.length === 0) continue;
 
+            // GHL often rejects empty `message` even when attachments exist; outbound lock keys must be unique per WA message.
+            const mediaLabel =
+                msg.typeMessage === "imageMessage"
+                    ? "[Image]"
+                    : msg.typeMessage === "videoMessage"
+                      ? "[Video]"
+                      : msg.typeMessage === "audioMessage"
+                        ? "[Audio]"
+                        : msg.typeMessage === "documentMessage"
+                          ? "[Document]"
+                          : msg.typeMessage === "stickerMessage"
+                            ? "[Sticker]"
+                            : "[Media]";
+            const bodyForGhl = (messageContent || "").trim() || (attachments.length > 0 ? mediaLabel : "");
+
+            if (!bodyForGhl && attachments.length === 0) continue;
+
             const isIncoming = msg.type === "incoming";
 
             try {
@@ -869,30 +881,50 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
                     const msgData: ContactData = {
                         contactId: contactId,
                         conversationId: conversationId,
-                        message: messageContent,
+                        message: bodyForGhl,
                         ...(attachments.length > 0 && { attachments }),
                     };
-                    await addMessageToConversation(ghlAuth, msgData);
+                    const inboundRes = await addMessageToConversation(ghlAuth, msgData);
+                    if (!inboundRes.success) {
+                        historyFailed++;
+                        console.error(
+                            `[sync-history] GHL inbound failed idMessage=${msg.idMessage} status=${inboundRes.status}`,
+                            inboundRes.data
+                        );
+                    } else {
+                        historySynced++;
+                    }
                 } else {
-                    const lockKey = `ignore_outbound:${contactId}:${Buffer.from(messageContent).toString('base64')}`;
+                    const lockKey = `ignore_outbound:${contactId}:${msg.idMessage || bodyForGhl.slice(0, 64)}`;
                     await connection.set(lockKey, "1", "EX", 30);
 
                     const msgData: ContactData = {
                         contactId: contactId,
-                        message: messageContent,
+                        conversationId,
+                        message: bodyForGhl,
                         ...(attachments.length > 0 && { attachments }),
                         status: "read",
                     };
-                    await sentOutboundMessage(ghlAuth, msgData);
+                    const outRes = await sentOutboundMessage(ghlAuth, msgData);
+                    if (!outRes.success) {
+                        historyFailed++;
+                        console.error(
+                            `[sync-history] GHL outbound failed idMessage=${msg.idMessage} status=${outRes.status}`,
+                            outRes.data
+                        );
+                    } else {
+                        historySynced++;
+                    }
                 }
             } catch (err: any) {
+                historyFailed++;
                 console.error(`Failed to sync message ${msg.idMessage}:`, err.message);
             }
 
             await new Promise(r => setTimeout(r, 200));
         }
 
-        console.log(`Sync complete for ${chatId}`);
+        console.log(`Sync complete for ${chatId} (posted ${historySynced} messages, ${historyFailed} failures)`);
         await incrSyncField(idInstance, 'completedHistoryJobs');
 
         // Check if all history jobs are done
@@ -976,7 +1008,14 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
         };
 
         const { syncQueue } = await import('./queue');
-        let historyJobCount = 0;
+        const pendingHistoryJobs: {
+            idInstance: string;
+            chatId: string;
+            contactId: string;
+            locationId: string;
+            userId: string;
+            conversationId: string;
+        }[] = [];
 
         for (const contact of contacts) {
             try {
@@ -1057,18 +1096,14 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
                         }
 
                         if (conversationId) {
-                            syncQueue.add("sync-history", {
+                            pendingHistoryJobs.push({
                                 idInstance,
                                 chatId: contact.id,
                                 contactId: newContactId,
                                 locationId,
                                 userId,
-                                conversationId
-                            }, {
-                                removeOnComplete: true,
-                                removeOnFail: 1000
+                                conversationId,
                             });
-                            historyJobCount++;
                         }
                     }
                 }
@@ -1078,6 +1113,14 @@ const syncWorker = new Worker('sync-processing', async (job: Job) => {
             }
 
             await incrSyncField(idInstance, 'processedContacts');
+        }
+
+        const historyJobCount = pendingHistoryJobs.length;
+        for (const jobPayload of pendingHistoryJobs) {
+            await syncQueue.add("sync-history", jobPayload, {
+                removeOnComplete: true,
+                removeOnFail: 1000,
+            });
         }
 
         // Update phase to history syncing

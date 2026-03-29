@@ -38,6 +38,43 @@ interface SyncProgress {
     error: string;
 }
 
+const IDLE_SYNC: SyncProgress = {
+    status: 'idle',
+    phase: '',
+    totalContacts: 0,
+    processedContacts: 0,
+    totalHistoryJobs: 0,
+    completedHistoryJobs: 0,
+    startedAt: null,
+    error: '',
+};
+
+async function consumeSyncContactsSse(
+    response: Response,
+    onData: (obj: Record<string, unknown>) => void
+) {
+    const reader = response.body?.getReader();
+    if (!reader) return;
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data: ")) continue;
+            try {
+                onData(JSON.parse(trimmed.slice(6)) as Record<string, unknown>);
+            } catch {
+                /* ignore malformed chunk */
+            }
+        }
+    }
+}
+
 const WhatsAppManager = () => {
     const [instances, setInstances] = useState<WhatsappInstance[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -210,7 +247,7 @@ const WhatsAppManager = () => {
         const poll = async () => {
             try {
                 const res = await axios.get(`/api/instances/sync-contacts/status?idInstance=${idInstance}`);
-                if (res.data.success && res.data.data) {
+                if (res.data.success && res.data.data != null) {
                     const progress = res.data.data as SyncProgress;
                     setSyncProgress(prev => ({ ...prev, [idInstance]: progress }));
 
@@ -244,7 +281,7 @@ const WhatsAppManager = () => {
                 if (inst.status === 'authorized') {
                     axios.get(`/api/instances/sync-contacts/status?idInstance=${inst.idInstance}`)
                         .then(res => {
-                            if (res.data.success && res.data.data) {
+                            if (res.data.success && res.data.data != null) {
                                 const progress = res.data.data as SyncProgress;
                                 if (progress.status === 'syncing') {
                                     setSyncProgress(prev => ({ ...prev, [inst.idInstance]: progress }));
@@ -263,7 +300,7 @@ const WhatsAppManager = () => {
             Object.values(syncPollingRef.current).forEach(clearInterval);
             syncPollingRef.current = {};
         };
-    }, [instances.length]);
+    }, [instances.length, startSyncPolling]);
 
     const handleSyncContacts = async (idInstance: string) => {
         const currentProgress = syncProgress[idInstance];
@@ -272,21 +309,116 @@ const WhatsAppManager = () => {
             return;
         }
 
-        if (!confirm("This will sync all WhatsApp contacts and their chat history to Kleegr. This may take a while. Continue?")) {
+        if (!confirm(
+            "This will sync all WhatsApp contacts to HighLevel first, then import up to the last 1,000 messages per chat. It may take a while. Continue?"
+        )) {
             return;
         }
 
+        startSyncPolling(idInstance);
+
         try {
-            const res = await axios.post('/api/instances/sync-contacts', { idInstance });
-            if (res.data.success) {
-                toast.success("Sync started! You can navigate away - it will continue in the background.");
-                startSyncPolling(idInstance);
-            } else {
-                toast.error(res.data.error || "Failed to start sync");
+            const res = await fetch("/api/instances/sync-contacts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ idInstance }),
+            });
+
+            if (!res.ok) {
+                let msg = `Failed to start sync (${res.status})`;
+                try {
+                    const j = await res.json();
+                    if (j?.error) msg = j.error;
+                } catch {
+                    /* ignore */
+                }
+                toast.error(msg);
+                setSyncProgress(prev => ({
+                    ...prev,
+                    [idInstance]: { ...IDLE_SYNC, status: "error", error: msg },
+                }));
+                if (syncPollingRef.current[idInstance]) {
+                    clearInterval(syncPollingRef.current[idInstance]);
+                    delete syncPollingRef.current[idInstance];
+                }
+                return;
             }
-        } catch (error: any) {
-            const errMsg = error.response?.data?.error || "Failed to start sync";
+
+            await consumeSyncContactsSse(res, (payload) => {
+                if (payload.error != null) {
+                    const err = String(payload.error);
+                    setSyncProgress(prev => ({
+                        ...prev,
+                        [idInstance]: {
+                            ...(prev[idInstance] || IDLE_SYNC),
+                            status: "error",
+                            error: err,
+                        },
+                    }));
+                    toast.error(err);
+                    return;
+                }
+                if (payload.type === "start") {
+                    const total = Number(payload.total) || 0;
+                    setSyncProgress(prev => ({
+                        ...prev,
+                        [idInstance]: {
+                            status: "syncing",
+                            phase: "contacts",
+                            totalContacts: total,
+                            processedContacts: 0,
+                            totalHistoryJobs: 0,
+                            completedHistoryJobs: 0,
+                            startedAt: Date.now(),
+                            error: "",
+                        },
+                    }));
+                    toast.success("Sync started — importing contacts…");
+                }
+                if (payload.type === "progress") {
+                    const total = Number(payload.total) || 0;
+                    const processed = Number(payload.processed) || 0;
+                    setSyncProgress(prev => ({
+                        ...prev,
+                        [idInstance]: {
+                            ...(prev[idInstance] || IDLE_SYNC),
+                            status: "syncing",
+                            phase: "contacts",
+                            totalContacts: total,
+                            processedContacts: processed,
+                        },
+                    }));
+                }
+                if (payload.type === "done") {
+                    const historyJobs = Number(payload.historyJobs) || 0;
+                    setSyncProgress(prev => {
+                        const cur = prev[idInstance] || IDLE_SYNC;
+                        return {
+                            ...prev,
+                            [idInstance]: {
+                                ...cur,
+                                status: historyJobs > 0 ? "syncing" : "done",
+                                phase: historyJobs > 0 ? "history" : "done",
+                                totalContacts: Number(payload.total) || cur.totalContacts,
+                                processedContacts: Number(payload.processed) || cur.processedContacts,
+                                totalHistoryJobs: historyJobs,
+                                completedHistoryJobs: historyJobs > 0 ? 0 : cur.completedHistoryJobs,
+                            },
+                        };
+                    });
+                }
+            });
+        } catch (error: unknown) {
+            const errMsg = error instanceof Error ? error.message : "Failed to sync";
             toast.error(errMsg);
+            setSyncProgress(prev => ({
+                ...prev,
+                [idInstance]: { ...IDLE_SYNC, status: "error", error: errMsg },
+            }));
+            if (syncPollingRef.current[idInstance]) {
+                clearInterval(syncPollingRef.current[idInstance]);
+                delete syncPollingRef.current[idInstance];
+            }
         }
     };
 

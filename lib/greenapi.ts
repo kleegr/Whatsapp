@@ -21,7 +21,27 @@ export const getGroupData = async (apiUrl: string, idInstance: string, apiTokenI
     }
 };
 
-export const getChatHistory = async (apiUrl: string, idInstance: string, apiTokenInstance: string, chatId: string, count: number = 100) => {
+/** Messages to fetch per chat when syncing history to GHL (`getChatHistory` `count`). */
+export const SYNC_CHAT_HISTORY_COUNT = 1000;
+
+/** Normalize Green API getChatHistory body to a message array (docs: top-level array; some proxies may wrap). */
+export function normalizeChatHistoryPayload(data: unknown): unknown[] {
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === "object") {
+        const o = data as Record<string, unknown>;
+        if (Array.isArray(o.messages)) return o.messages;
+        if (Array.isArray(o.chatHistory)) return o.chatHistory;
+    }
+    return [];
+}
+
+export const getChatHistory = async (
+    apiUrl: string,
+    idInstance: string,
+    apiTokenInstance: string,
+    chatId: string,
+    count: number = 100
+): Promise<any[]> => {
     const baseUrl = apiUrl.endsWith('/') ? apiUrl : `${apiUrl}/`;
     const url = `${baseUrl}waInstance${idInstance}/getChatHistory/${apiTokenInstance}`;
     const payload = {
@@ -33,11 +53,25 @@ export const getChatHistory = async (apiUrl: string, idInstance: string, apiToke
         const response = await axios.post(url, payload, {
             headers: {
                 'Content-Type': 'application/json'
-            }
+            },
+            validateStatus: (s) => s < 500,
         });
-        return response.data;
+        if (response.status >= 400) {
+            console.error("getChatHistory HTTP error:", response.status, response.data);
+            return [];
+        }
+        const raw = response.data;
+        const list = normalizeChatHistoryPayload(raw);
+        if (list.length === 0 && raw != null && !Array.isArray(raw)) {
+            console.warn(
+                "getChatHistory: response was not a message array. chatId=%s keys=%s",
+                chatId,
+                typeof raw === "object" && raw ? Object.keys(raw as object).join(",") : typeof raw
+            );
+        }
+        return list;
     } catch (error: any) {
-        console.error("Error getting chat history:", error.message);
+        console.error("Error getting chat history:", error.message, error.response?.data ?? "");
         return [];
     }
 };

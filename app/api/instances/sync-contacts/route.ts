@@ -4,6 +4,7 @@ import { getContacts } from "../../../../lib/greenapi";
 import { getToken } from "../../../../lib/token";
 import { setupCustomFields, upsertContact, createConversation, searchConversation, ContactData } from "../../../../lib/ghl";
 import { syncQueue } from "../../../../lib/queue";
+import { setSyncProgress } from "../../../../lib/syncProgress";
 
 const APP_ID = process.env.GHL_APP_ID!;
 
@@ -34,6 +35,10 @@ export async function POST(req: Request) {
 
                     if (!instance) {
                         sendEvent({ error: "Instance not found" });
+                        await setSyncProgress(idInstance.toString(), {
+                            status: "error",
+                            error: "Instance not found",
+                        }).catch(() => {});
                         controller.close();
                         return;
                     }
@@ -42,6 +47,10 @@ export async function POST(req: Request) {
 
                     if (!locationId || !apiTokenInstance || !apiUrl) {
                         sendEvent({ error: "Instance configuration invalid" });
+                        await setSyncProgress(idInstance.toString(), {
+                            status: "error",
+                            error: "Instance configuration invalid",
+                        }).catch(() => {});
                         controller.close();
                         return;
                     }
@@ -52,6 +61,10 @@ export async function POST(req: Request) {
                     const tokenRecord = await getToken(locationId, APP_ID);
                     if (!tokenRecord || ("success" in tokenRecord && !tokenRecord.success)) {
                         sendEvent({ error: "Failed to get GHL token" });
+                        await setSyncProgress(idInstance.toString(), {
+                            status: "error",
+                            error: "Failed to get GHL token",
+                        }).catch(() => {});
                         controller.close();
                         return;
                     }
@@ -77,6 +90,10 @@ export async function POST(req: Request) {
 
                     if (!Array.isArray(contacts)) {
                         sendEvent({ error: "Failed to fetch contacts from GreenAPI" });
+                        await setSyncProgress(idInstance.toString(), {
+                            status: "error",
+                            error: "Failed to fetch contacts from GreenAPI",
+                        }).catch(() => {});
                         controller.close();
                         return;
                     }
@@ -86,6 +103,17 @@ export async function POST(req: Request) {
 
                     console.log(`Fetched ${total} contacts for instance ${idInstance}. Starting upsert...`);
 
+                    await setSyncProgress(idInstance.toString(), {
+                        status: "syncing",
+                        phase: "contacts",
+                        totalContacts: total,
+                        processedContacts: 0,
+                        totalHistoryJobs: 0,
+                        completedHistoryJobs: 0,
+                        startedAt: Date.now(),
+                        error: "",
+                    });
+
                     const ghlAuth = {
                         locationId,
                         access_token: accessToken,
@@ -93,6 +121,14 @@ export async function POST(req: Request) {
                     };
 
                     let processedCount = 0;
+                    const pendingHistoryJobs: {
+                        idInstance: string;
+                        chatId: string;
+                        contactId: string;
+                        locationId: string;
+                        userId: string;
+                        conversationId: string;
+                    }[] = [];
 
                     for (const contact of contacts) {
                         try {
@@ -163,16 +199,13 @@ export async function POST(req: Request) {
                                     }
 
                                     if (conversationId) {
-                                        syncQueue.add("sync-history", {
+                                        pendingHistoryJobs.push({
                                             idInstance,
                                             chatId: contact.id,
                                             contactId: newContactId,
                                             locationId,
                                             userId,
-                                            conversationId
-                                        }, {
-                                            removeOnComplete: true,
-                                            removeOnFail: 1000
+                                            conversationId,
                                         });
                                     }
                                 }
@@ -182,15 +215,53 @@ export async function POST(req: Request) {
                         } finally {
                             processedCount++;
                             sendEvent({ type: 'progress', processed: processedCount, total });
+                            await setSyncProgress(idInstance.toString(), {
+                                status: "syncing",
+                                phase: "contacts",
+                                totalContacts: total,
+                                processedContacts: processedCount,
+                            });
                         }
                     }
 
-                    sendEvent({ type: 'done', total: total, processed: processedCount });
+                    const historyJobCount = pendingHistoryJobs.length;
+                    for (const jobPayload of pendingHistoryJobs) {
+                        await syncQueue.add("sync-history", jobPayload, {
+                            removeOnComplete: true,
+                            removeOnFail: 1000,
+                        });
+                    }
+
+                    if (historyJobCount > 0) {
+                        await setSyncProgress(idInstance.toString(), {
+                            status: "syncing",
+                            phase: "history",
+                            totalContacts: total,
+                            processedContacts: processedCount,
+                            totalHistoryJobs: historyJobCount,
+                            completedHistoryJobs: 0,
+                        });
+                    } else {
+                        await setSyncProgress(idInstance.toString(), {
+                            status: "done",
+                            phase: "done",
+                            totalContacts: total,
+                            processedContacts: processedCount,
+                            totalHistoryJobs: 0,
+                            completedHistoryJobs: 0,
+                        });
+                    }
+
+                    sendEvent({ type: 'done', total: total, processed: processedCount, historyJobs: historyJobCount });
                     controller.close();
 
                 } catch (error: any) {
                     console.error("Sync Stream Error:", error);
                     sendEvent({ error: error.message });
+                    await setSyncProgress(idInstance.toString(), {
+                        status: "error",
+                        error: error.message || "Sync failed",
+                    }).catch(() => {});
                     controller.close();
                 }
             }
